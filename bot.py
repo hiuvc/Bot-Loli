@@ -16,13 +16,12 @@ CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "1420764782390149211"))
 URL = "https://dashboard.kingdev.sbs/tool_ug.php?status"
 MESSAGE_FILE = "stock_message.json"
 
-# Khi bot khởi động
+# ================= UPTIME =================
 last_uptime = get_last_uptime()
 if last_uptime:
     hours, remainder = divmod(last_uptime.total_seconds(), 3600)
     minutes, seconds = divmod(remainder, 60)
     print(f"⚠ Bot lần trước đã on được {int(hours)}h {int(minutes)}m {int(seconds)}s trước khi bị tắt.")
-
 save_start_time()
 
 # ================= HELPER =================
@@ -34,7 +33,6 @@ def load_message_id():
                 return int(data.get("message_id", 0))
         except Exception as e:
             print(Fore.RED + f"⚠ Lỗi load message_id: {e}")
-            return None
     return None
 
 def save_message_id(message_id):
@@ -46,16 +44,14 @@ def get_stock_embed():
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(URL, headers=headers, timeout=30)
         response.raise_for_status()
-
         try:
             data = response.json()
         except json.JSONDecodeError:
             return discord.Embed(
                 title="📡 UGPHONE STOCK STATUS",
-                description=f"❌ Lỗi khi parse JSON!\nServer trả về:\n```{response.text[:200]}...```",
+                description=f"❌ Lỗi parse JSON!\nServer trả về:\n```{response.text[:200]}...```",
                 color=discord.Color.red()
             )
-
     except requests.RequestException as e:
         return discord.Embed(
             title="📡 UGPHONE STOCK STATUS",
@@ -84,7 +80,7 @@ def get_stock_embed():
 
 # ================= DISCORD BOT =================
 intents = discord.Intents.default()
-intents.message_content = True  # cần cho lệnh /refresh
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 stock_message = None
 last_checked = None  # lưu last_updated gần nhất
@@ -92,24 +88,18 @@ last_checked = None  # lưu last_updated gần nhất
 async def init_stock_message():
     global stock_message, last_checked
     channel = await bot.fetch_channel(CHANNEL_ID)
-
     message_id = load_message_id()
+
     if message_id:
         try:
             stock_message = await channel.fetch_message(message_id)
             print(Fore.YELLOW + "✔ Đã load message cũ, sẽ edit tiếp.")
         except:
             stock_message = None
-            print(Fore.YELLOW + "⚠ Không tìm thấy message cũ, sẽ gửi mới.")
+            print(Fore.YELLOW + "⚠ Message cũ không tìm thấy, sẽ tạo mới khi task chạy.")
 
-    if stock_message is None:
-        embed = get_stock_embed()
-        stock_message = await channel.send(embed=embed)
-        save_message_id(stock_message.id)
-        print(Fore.GREEN + f"✔ Gửi message stock mới: {stock_message.id}")
-
-    # Lưu last_updated ban đầu
-    last_checked = stock_message.embeds[0].footer.text.split("•")[0].replace("Lần cập nhật cuối: ", "").strip()
+    if stock_message:
+        last_checked = stock_message.embeds[0].footer.text.split("•")[0].replace("Lần cập nhật cuối: ", "").strip()
 
 # ================= TASK LOOP =================
 @tasks.loop(minutes=5)
@@ -127,38 +117,54 @@ async def update_stock():
 
         last_checked = new_last_updated
 
-        if stock_message is None:
+        # Nếu message cũ còn thì edit
+        if stock_message:
+            try:
+                await stock_message.edit(embed=embed)
+                print(Fore.CYAN + f"♻ Updated stock at {datetime.now().strftime('%H:%M:%S')} (last_updated: {new_last_updated})")
+            except discord.NotFound:
+                print(Fore.RED + "❌ Message cũ bị xóa, sẽ gửi message mới.")
+                stock_message = await channel.send(embed=embed)
+                save_message_id(stock_message.id)
+                print(Fore.GREEN + f"✔ Gửi message stock mới: {stock_message.id}")
+        else:
+            # Nếu chưa có message cũ, gửi mới
             stock_message = await channel.send(embed=embed)
             save_message_id(stock_message.id)
-            print(Fore.GREEN + f"✔ Gửi message stock mới.")
-        else:
-            await stock_message.edit(embed=embed)
-            print(Fore.CYAN + f"♻ Updated stock at {datetime.now().strftime('%H:%M:%S')} (last_updated: {new_last_updated})")
+            print(Fore.GREEN + f"✔ Gửi message stock mới: {stock_message.id}")
 
     except Exception as e:
         print(Fore.RED + f"❌ Lỗi khi update message: {e}")
-        print(Fore.YELLOW + "♻ Thử lại lần sau...")
 
 # ================= COMMAND =================
 @bot.command()
 async def refresh(ctx):
     """Làm mới stock ngay lập tức."""
     global stock_message, last_checked
+    channel = await bot.fetch_channel(CHANNEL_ID)
     embed = get_stock_embed()
     new_last_updated = embed.footer.text.split("•")[0].replace("Lần cập nhật cuối: ", "").strip()
-
     last_checked = new_last_updated
 
-    channel = await bot.fetch_channel(CHANNEL_ID)
     try:
         if stock_message:
-            await stock_message.edit(embed=embed)
-            await ctx.send("♻ Stock đã được làm mới!", delete_after=5)
+            try:
+                await stock_message.edit(embed=embed)
+                await ctx.send("♻ Stock đã được làm mới!", delete_after=5)
+                print(Fore.CYAN + f"♻ Manual refresh by {ctx.author} at {datetime.now().strftime('%H:%M:%S')}")
+            except discord.NotFound:
+                # Message cũ bị xóa, gửi mới
+                stock_message = await channel.send(embed=embed)
+                save_message_id(stock_message.id)
+                await ctx.send("✔ Message cũ không tìm thấy, đã gửi message stock mới!", delete_after=5)
+                print(Fore.GREEN + f"✔ Manual refresh gửi message stock mới: {stock_message.id}")
         else:
+            # Chưa có message cũ, gửi mới
             stock_message = await channel.send(embed=embed)
             save_message_id(stock_message.id)
             await ctx.send("✔ Đã gửi message stock mới!", delete_after=5)
-        print(Fore.CYAN + f"♻ Manual refresh by {ctx.author} at {datetime.now().strftime('%H:%M:%S')}")
+            print(Fore.GREEN + f"✔ Manual refresh gửi message stock mới: {stock_message.id}")
+
     except Exception as e:
         await ctx.send(f"❌ Lỗi khi làm mới: {e}", delete_after=10)
 
