@@ -42,7 +42,7 @@ def save_message_id(message_id):
 def get_stock_embed():
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(URL, headers=headers, timeout=30)
+        response = requests.get(URL, headers=headers, timeout=60)
         response.raise_for_status()
         try:
             data = response.json()
