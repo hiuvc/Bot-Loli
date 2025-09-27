@@ -87,9 +87,10 @@ intents = discord.Intents.default()
 intents.message_content = True  # cần cho lệnh /refresh
 bot = commands.Bot(command_prefix="!", intents=intents)
 stock_message = None
+last_checked = None  # lưu last_updated gần nhất
 
 async def init_stock_message():
-    global stock_message
+    global stock_message, last_checked
     channel = await bot.fetch_channel(CHANNEL_ID)
 
     message_id = load_message_id()
@@ -107,37 +108,47 @@ async def init_stock_message():
         save_message_id(stock_message.id)
         print(Fore.GREEN + f"✔ Gửi message stock mới: {stock_message.id}")
 
+    # Lưu last_updated ban đầu
+    last_checked = stock_message.embeds[0].footer.text.split("•")[0].replace("Lần cập nhật cuối: ", "").strip()
+
 # ================= TASK LOOP =================
 @tasks.loop(minutes=5)
 async def update_stock():
-    global stock_message
+    global stock_message, last_checked
     channel = await bot.fetch_channel(CHANNEL_ID)
 
-    while True:
-        try:
-            embed = get_stock_embed()
+    try:
+        embed = get_stock_embed()
+        new_last_updated = embed.footer.text.split("•")[0].replace("Lần cập nhật cuối: ", "").strip()
 
-            if stock_message is None:
-                stock_message = await channel.send(embed=embed)
-                save_message_id(stock_message.id)
-                print(Fore.GREEN + f"✔ Gửi message stock mới.")
-            else:
-                await stock_message.edit(embed=embed)
-                print(Fore.CYAN + f"♻ Updated stock at {datetime.now().strftime('%H:%M:%S')}")
-            break  # Nếu thành công, thoát vòng retry
+        if new_last_updated == last_checked:
+            print(Fore.YELLOW + f"♻ Data chưa thay đổi (last_updated: {new_last_updated}), không edit.")
+            return
 
-        except Exception as e:
-            print(Fore.RED + f"❌ Lỗi khi update message: {e}")
-            print(Fore.YELLOW + "♻ Thử lại sau 5 giây...")
-            await asyncio.sleep(5)  # Đợi 5 giây trước khi thử lại
+        last_checked = new_last_updated
 
+        if stock_message is None:
+            stock_message = await channel.send(embed=embed)
+            save_message_id(stock_message.id)
+            print(Fore.GREEN + f"✔ Gửi message stock mới.")
+        else:
+            await stock_message.edit(embed=embed)
+            print(Fore.CYAN + f"♻ Updated stock at {datetime.now().strftime('%H:%M:%S')} (last_updated: {new_last_updated})")
+
+    except Exception as e:
+        print(Fore.RED + f"❌ Lỗi khi update message: {e}")
+        print(Fore.YELLOW + "♻ Thử lại lần sau...")
 
 # ================= COMMAND =================
 @bot.command()
 async def refresh(ctx):
     """Làm mới stock ngay lập tức."""
-    global stock_message
+    global stock_message, last_checked
     embed = get_stock_embed()
+    new_last_updated = embed.footer.text.split("•")[0].replace("Lần cập nhật cuối: ", "").strip()
+
+    last_checked = new_last_updated
+
     channel = await bot.fetch_channel(CHANNEL_ID)
     try:
         if stock_message:
@@ -147,6 +158,7 @@ async def refresh(ctx):
             stock_message = await channel.send(embed=embed)
             save_message_id(stock_message.id)
             await ctx.send("✔ Đã gửi message stock mới!", delete_after=5)
+        print(Fore.CYAN + f"♻ Manual refresh by {ctx.author} at {datetime.now().strftime('%H:%M:%S')}")
     except Exception as e:
         await ctx.send(f"❌ Lỗi khi làm mới: {e}", delete_after=10)
 
