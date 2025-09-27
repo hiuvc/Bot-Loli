@@ -112,16 +112,25 @@ async def init_stock_message():
 async def update_stock():
     global stock_message
     channel = await bot.fetch_channel(CHANNEL_ID)
-    embed = get_stock_embed()
-    try:
-        if stock_message is None:
-            stock_message = await channel.send(embed=embed)
-            save_message_id(stock_message.id)
-        else:
-            await stock_message.edit(embed=embed)
-        print(Fore.CYAN + f"♻ Updated stock at {datetime.now().strftime('%H:%M:%S')}")
-    except Exception as e:
-        print(Fore.RED + f"❌ Lỗi khi update message: {e}")
+
+    while True:
+        try:
+            embed = get_stock_embed()
+
+            if stock_message is None:
+                stock_message = await channel.send(embed=embed)
+                save_message_id(stock_message.id)
+                print(Fore.GREEN + f"✔ Gửi message stock mới.")
+            else:
+                await stock_message.edit(embed=embed)
+                print(Fore.CYAN + f"♻ Updated stock at {datetime.now().strftime('%H:%M:%S')}")
+            break  # Nếu thành công, thoát vòng retry
+
+        except Exception as e:
+            print(Fore.RED + f"❌ Lỗi khi update message: {e}")
+            print(Fore.YELLOW + "♻ Thử lại sau 5 giây...")
+            await asyncio.sleep(5)  # Đợi 5 giây trước khi thử lại
+
 
 # ================= COMMAND =================
 @bot.command()
