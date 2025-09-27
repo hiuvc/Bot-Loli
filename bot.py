@@ -7,26 +7,26 @@ from colorama import init, Fore
 import discord
 from discord.ext import commands, tasks
 from uptime import save_start_time, get_last_uptime
-from keep_alive import keep_alive  # File riêng
-
-# ================= INIT =================
-init(autoreset=True)
-
+# Gọi keep_alive từ file riêng
+from keep_alive import keep_alive
 # Khi bot khởi động
 last_uptime = get_last_uptime()
 if last_uptime:
     hours, remainder = divmod(last_uptime.total_seconds(), 3600)
     minutes, seconds = divmod(remainder, 60)
-    print(f"⚠ Bot lần trước đã on được {int(hours)}h {int(minutes)}m {int(seconds)}s trước khi bị tắt.")
+    print(
+        f"⚠ Bot lần trước đã on được {int(hours)}h {int(minutes)}m {int(seconds)}s trước khi bị tắt."
+    )
 
 # Ghi lại thời gian start mới
 save_start_time()
-
 # ================= CONFIG =================
-TOKEN = os.getenv("DISCORD_TOKEN")
+init(autoreset=True)
+TOKEN = os.getenv("DISCORD_TOKEN")  # Set trong environment variable
 CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "1420764782390149211"))
 URL = "https://dashboard.kingdev.sbs/tool_ug.php?status"
 MESSAGE_FILE = "stock_message.json"
+
 
 # ================= HELPER =================
 def load_message_id():
@@ -39,33 +39,17 @@ def load_message_id():
             return None
     return None
 
+
 def save_message_id(message_id):
     with open(MESSAGE_FILE, "w") as f:
         json.dump({"message_id": message_id}, f)
 
-def get_stock_embed():
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/140.0.0.0 Safari/537.36"
-    }
 
+def get_stock_embed():
     try:
-        response = requests.get(URL, headers=headers, timeout=30)
+        response = requests.get(URL, timeout=30)
         response.raise_for_status()
         data = response.json()
-    except requests.exceptions.HTTPError as http_err:
-        return discord.Embed(title="📡 UGPHONE STOCK STATUS",
-                             description=f"❌ HTTP error: {http_err}",
-                             color=discord.Color.red())
-    except requests.exceptions.ConnectionError as conn_err:
-        return discord.Embed(title="📡 UGPHONE STOCK STATUS",
-                             description=f"❌ Connection error: {conn_err}",
-                             color=discord.Color.red())
-    except requests.exceptions.Timeout as timeout_err:
-        return discord.Embed(title="📡 UGPHONE STOCK STATUS",
-                             description=f"❌ Timeout error: {timeout_err}",
-                             color=discord.Color.red())
     except Exception as e:
         return discord.Embed(title="📡 UGPHONE STOCK STATUS",
                              description=f"❌ Lỗi khi kết nối: {e}",
@@ -74,12 +58,11 @@ def get_stock_embed():
     servers = data.get("servers", {})
     status = data.get("status", "unknown")
     last_updated = data.get("last_updated", "unknown")
-
     embed = discord.Embed(
         title="📡 UGPHONE STOCK STATUS",
         description=f"**Status:** {status}\n**Message:** Hiếu Đẹp Zai",
-        color=discord.Color.green() if status == "success" else discord.Color.red()
-    )
+        color=discord.Color.green()
+        if status == "success" else discord.Color.red())
 
     green = "🟢"
     red = "🔴"
@@ -87,15 +70,17 @@ def get_stock_embed():
         icon = green if stt != "Out of Stock" else red
         embed.add_field(name=server, value=f"{icon} {stt}", inline=True)
 
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     embed.set_footer(
-        text=f"Lần cập nhật cuối: {last_updated} • Tự động làm mới mỗi 5 phút"
-    )
+        text=f"Lần cập nhật cuối: {last_updated} • Tự động làm mới mỗi 5 phút")
     return embed
+
 
 # ================= DISCORD BOT =================
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 stock_message = None
+
 
 async def init_stock_message():
     global stock_message
@@ -119,6 +104,7 @@ async def init_stock_message():
         save_message_id(stock_message.id)
         print(Fore.GREEN + f"✔ Gửi message stock mới: {stock_message.id}")
 
+
 # ================= TASK LOOP =================
 @tasks.loop(minutes=5)
 async def update_stock():
@@ -135,9 +121,11 @@ async def update_stock():
             save_message_id(stock_message.id)
         else:
             await stock_message.edit(embed=embed)
-        print(Fore.CYAN + f"♻ Updated stock at {datetime.now().strftime('%H:%M:%S')}")
+        print(Fore.CYAN +
+              f"♻ Updated stock at {datetime.now().strftime('%H:%M:%S')}")
     except Exception as e:
         print(Fore.RED + f"❌ Lỗi khi update message: {e}")
+
 
 # ================= AUTO RECONNECT =================
 async def run_bot():
@@ -148,6 +136,7 @@ async def run_bot():
             print(Fore.RED + f"Lỗi bot: {e}")
             await asyncio.sleep(5)  # Đợi 5 giây trước khi reconnect
 
+
 # ================= EVENTS =================
 @bot.event
 async def on_ready():
@@ -155,11 +144,14 @@ async def on_ready():
     await init_stock_message()
     update_stock.start()
 
+
 # ================= MAIN =================
 if __name__ == "__main__":
     if not TOKEN:
-        print(Fore.RED + "❌ Vui lòng thiết lập DISCORD_TOKEN trong environment variables!")
+        print(
+            Fore.RED +
+            "❌ Vui lòng thiết lập DISCORD_TOKEN trong environment variables!")
         exit(1)
 
     keep_alive()  # chạy Flask server
-    asyncio.run(run_bot())
+    asyncio.run(run_bot())  # chạy bot với auto reconnect
