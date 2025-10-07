@@ -16,13 +16,12 @@ CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "1420764782390149211"))
 URL = "https://dashboard.kingdev.sbs/tool_ug.php?status"
 MESSAGE_FILE = "stock_message.json"
 
-# Khi bot khởi động
+# ================= UPTIME =================
 last_uptime = get_last_uptime()
 if last_uptime:
     hours, remainder = divmod(last_uptime.total_seconds(), 3600)
     minutes, seconds = divmod(remainder, 60)
     print(f"⚠ Bot lần trước đã on được {int(hours)}h {int(minutes)}m {int(seconds)}s trước khi bị tắt.")
-
 save_start_time()
 
 # ================= HELPER =================
@@ -41,25 +40,29 @@ def save_message_id(message_id):
     with open(MESSAGE_FILE, "w") as f:
         json.dump({"message_id": message_id}, f)
 
-def get_stock_embed():
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(URL, headers=headers, timeout=60)
-        response.raise_for_status()
-
+def fetch_data_with_retry(url, retries=3, delay=5):
+    headers = {"User-Agent": "Mozilla/5.0"}
+    for attempt in range(1, retries + 1):
         try:
-            data = response.json()
-        except json.JSONDecodeError:
-            return discord.Embed(
-                title="📡 UGPHONE STOCK STATUS",
-                description=f"❌ Lỗi khi parse JSON!\nServer trả về:\n```{response.text[:200]}...```",
-                color=discord.Color.red()
-            )
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            try:
+                return response.json()
+            except json.JSONDecodeError:
+                print(Fore.RED + f"⚠ Lỗi parse JSON! Response: {response.text[:200]}...")
+                return None
+        except requests.RequestException as e:
+            print(Fore.RED + f"⚠ Lỗi request (attempt {attempt}/{retries}): {e}")
+            if attempt < retries:
+                asyncio.sleep(delay)
+    return None
 
-    except requests.RequestException as e:
+def get_stock_embed():
+    data = fetch_data_with_retry(URL)
+    if not data:
         return discord.Embed(
             title="📡 UGPHONE STOCK STATUS",
-            description=f"❌ Lỗi khi kết nối: {e}",
+            description="❌ Không thể lấy dữ liệu từ server sau 3 lần thử.",
             color=discord.Color.red()
         )
 
@@ -84,7 +87,7 @@ def get_stock_embed():
 
 # ================= DISCORD BOT =================
 intents = discord.Intents.default()
-intents.message_content = True  # cần cho lệnh /refresh
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 stock_message = None
 
@@ -112,39 +115,16 @@ async def init_stock_message():
 async def update_stock():
     global stock_message
     channel = await bot.fetch_channel(CHANNEL_ID)
-
-    while True:
-        try:
-            embed = get_stock_embed()
-
-            # Kiểm tra status trong embed description
-            desc = embed.description or ""
-            if any(x in desc for x in ["error", "unknown"]):
-                # Nếu status = error hoặc unknown => refresh ngay
-                print(Fore.RED + f"⚠ Status báo lỗi ({desc}), refresh ngay...")
-                if stock_message:
-                    await stock_message.edit(embed=embed)
-                else:
-                    stock_message = await channel.send(embed=embed)
-                    save_message_id(stock_message.id)
-                break  # refresh xong thì thoát
-
-            # Trường hợp bình thường
-            if stock_message is None:
-                stock_message = await channel.send(embed=embed)
-                save_message_id(stock_message.id)
-                print(Fore.GREEN + f"✔ Gửi message stock mới.")
-            else:
-                await stock_message.edit(embed=embed)
-                print(Fore.CYAN + f"♻ Updated stock at {datetime.now().strftime('%H:%M:%S')}")
-
-            break  # Nếu thành công, thoát vòng retry
-
-        except Exception as e:
-            print(Fore.RED + f"❌ Lỗi khi update message: {e}")
-            print(Fore.YELLOW + "♻ Thử lại sau 5 giây...")
-            await asyncio.sleep(5)  # Đợi 5 giây trước khi thử lại
-
+    try:
+        embed = get_stock_embed()
+        if stock_message:
+            await stock_message.edit(embed=embed)
+        else:
+            stock_message = await channel.send(embed=embed)
+            save_message_id(stock_message.id)
+        print(Fore.CYAN + f"♻ Updated stock at {datetime.now().strftime('%H:%M:%S')}")
+    except Exception as e:
+        print(Fore.RED + f"❌ Lỗi khi update message: {e}")
 
 # ================= COMMAND =================
 @bot.command()
