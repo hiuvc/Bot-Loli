@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import asyncio
 from datetime import datetime
 import requests
@@ -11,8 +12,14 @@ from keep_alive import keep_alive
 
 # ================= CONFIG =================
 init(autoreset=True)
+
 TOKEN = os.getenv("DISCORD_TOKEN")
-CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "1420764782390149211"))
+channel_env = os.getenv("DISCORD_CHANNEL_ID")
+if channel_env and channel_env.isdigit():
+    CHANNEL_ID = int(channel_env)
+else:
+    CHANNEL_ID = 1420764782390149211  # default channel id
+
 URL = "https://cloud.kingdev.site/?api=status"
 MESSAGE_FILE = "stock_message.json"
 
@@ -54,7 +61,7 @@ def fetch_data_with_retry(url, retries=3, delay=5):
         except requests.RequestException as e:
             print(Fore.RED + f"⚠ Lỗi request (attempt {attempt}/{retries}): {e}")
             if attempt < retries:
-                asyncio.sleep(delay)
+                time.sleep(delay)
     return None
 
 def get_stock_embed():
@@ -93,6 +100,7 @@ stock_message = None
 
 async def init_stock_message():
     global stock_message
+    await bot.wait_until_ready()
     channel = await bot.fetch_channel(CHANNEL_ID)
 
     message_id = load_message_id()
@@ -114,6 +122,7 @@ async def init_stock_message():
 @tasks.loop(minutes=5)
 async def update_stock():
     global stock_message
+    await bot.wait_until_ready()
     channel = await bot.fetch_channel(CHANNEL_ID)
     try:
         embed = get_stock_embed()
@@ -144,15 +153,6 @@ async def refresh(ctx):
     except Exception as e:
         await ctx.send(f"❌ Lỗi khi làm mới: {e}", delete_after=10)
 
-# ================= AUTO RECONNECT =================
-async def run_bot():
-    while True:
-        try:
-            await bot.start(TOKEN)
-        except Exception as e:
-            print(Fore.RED + f"Lỗi bot: {e}")
-            await asyncio.sleep(5)
-
 # ================= EVENTS =================
 @bot.event
 async def on_ready():
@@ -167,4 +167,4 @@ if __name__ == "__main__":
         exit(1)
 
     keep_alive()
-    asyncio.run(run_bot())
+    bot.run(TOKEN)
