@@ -1,9 +1,8 @@
 import os
 import json
-import time
 import asyncio
 from datetime import datetime
-import requests
+import aiohttp
 from colorama import init, Fore
 import discord
 from discord.ext import commands, tasks
@@ -44,28 +43,38 @@ def load_message_id():
     return None
 
 def save_message_id(message_id):
-    with open(MESSAGE_FILE, "w") as f:
-        json.dump({"message_id": message_id}, f)
+    try:
+        with open(MESSAGE_FILE, "w") as f:
+            json.dump({"message_id": message_id}, f)
+    except Exception as e:
+        print(Fore.RED + f"⚠ Lỗi lưu message_id: {e}")
 
-def fetch_data_with_retry(url, retries=3, delay=5):
-    headers = {"User-Agent": "Mozilla/5.0"}
+async def fetch_data_with_retry(url, retries=3, delay=5):
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json,text/html",
+        "Accept-Language": "en-US,en;q=0.9"
+    }
     for attempt in range(1, retries + 1):
         try:
-            response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
-            try:
-                return response.json()
-            except json.JSONDecodeError:
-                print(Fore.RED + f"⚠ Lỗi parse JSON! Response: {response.text[:200]}...")
-                return None
-        except requests.RequestException as e:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=15) as response:
+                    if response.status == 200:
+                        try:
+                            return await response.json()
+                        except Exception:
+                            text = await response.text()
+                            print(Fore.RED + f"⚠ Lỗi parse JSON! Response: {text[:200]}...")
+                            return None
+                    else:
+                        print(Fore.RED + f"⚠ HTTP {response.status}!")
+        except Exception as e:
             print(Fore.RED + f"⚠ Lỗi request (attempt {attempt}/{retries}): {e}")
-            if attempt < retries:
-                time.sleep(delay)
+        if attempt < retries:
+            await asyncio.sleep(delay)
     return None
 
-def get_stock_embed():
-    data = fetch_data_with_retry(URL)
+def build_stock_embed(data):
     if not data:
         return discord.Embed(
             title="📡 UGPHONE STOCK STATUS",
@@ -113,7 +122,8 @@ async def init_stock_message():
             print(Fore.YELLOW + "⚠ Không tìm thấy message cũ, sẽ gửi mới.")
 
     if stock_message is None:
-        embed = get_stock_embed()
+        data = await fetch_data_with_retry(URL)
+        embed = build_stock_embed(data)
         stock_message = await channel.send(embed=embed)
         save_message_id(stock_message.id)
         print(Fore.GREEN + f"✔ Gửi message stock mới: {stock_message.id}")
@@ -125,7 +135,8 @@ async def update_stock():
     await bot.wait_until_ready()
     channel = await bot.fetch_channel(CHANNEL_ID)
     try:
-        embed = get_stock_embed()
+        data = await fetch_data_with_retry(URL)
+        embed = build_stock_embed(data)
         if stock_message:
             await stock_message.edit(embed=embed)
         else:
@@ -140,9 +151,10 @@ async def update_stock():
 async def refresh(ctx):
     """Làm mới stock ngay lập tức."""
     global stock_message
-    embed = get_stock_embed()
     channel = await bot.fetch_channel(CHANNEL_ID)
     try:
+        data = await fetch_data_with_retry(URL)
+        embed = build_stock_embed(data)
         if stock_message:
             await stock_message.edit(embed=embed)
             await ctx.send("♻ Stock đã được làm mới!", delete_after=5)
