@@ -13,7 +13,7 @@ from keep_alive import keep_alive
 init(autoreset=True)
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "1420764782390149211"))
-URL = "https://dashboard.kingdev.sbs/tool_ug.php?status"
+URL = https://cloud.kingdev.site/?api=status
 MESSAGE_FILE = "stock_message.json"
 
 # ================= UPTIME =================
