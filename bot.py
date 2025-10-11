@@ -19,7 +19,7 @@ if channel_env and channel_env.isdigit():
 else:
     CHANNEL_ID = 1420764782390149211  # default channel id
 
-URL = "https://cloud.kingdev.site/?api=status"
+URL = "https://ug-stock-api-1.onrender.com/api/ugstock"
 MESSAGE_FILE = "stock_message.json"
 
 # ================= UPTIME =================
@@ -98,7 +98,7 @@ def build_stock_embed(data):
         icon = green if stt != "Out of Stock" else red
         embed.add_field(name=server, value=f"{icon} {stt}", inline=True)
 
-    embed.set_footer(text=f"Lần cập nhật cuối: {last_updated} • Tự động làm mới mỗi 5 phút")
+    embed.set_footer(text=f"Lần cập nhật cuối: {last_updated} • Tự động làm mới mỗi 30 giây")
     return embed
 
 # ================= DISCORD BOT =================
@@ -129,7 +129,7 @@ async def init_stock_message():
         print(Fore.GREEN + f"✔ Gửi message stock mới: {stock_message.id}")
 
 # ================= TASK LOOP =================
-@tasks.loop(minutes=5)
+@tasks.loop(seconds=30)
 async def update_stock():
     global stock_message
     await bot.wait_until_ready()
